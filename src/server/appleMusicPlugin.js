@@ -136,14 +136,30 @@ function createAppleMusicMiddleware() {
             const name = String(track?.name || '').trim()
             const artist = String(track?.artist || '').trim()
             const previewUrl = String(track?.previewUrl || '').trim()
+            const cleanName = name
+              .replace(/\(([^)]*(feat|ft|with)[^)]*)\)/gi, '')
+              .replace(/\b(feat|ft|with)\.?\b.*/gi, '')
+              .replace(/[-–]\s*(live|edit|version|remaster(ed)?)\b.*/gi, '')
+              .trim()
+
+            const shortName = cleanName.split(/\s+/).slice(0, 4).join(' ').trim()
+            const queryPrimary = `${name} ${artist}`.trim()
+            const queryByName = name
+            const queryByCleanName = cleanName
+            const queryByArtist = artist
+            const queryByArtistAndShortName = `${artist} ${shortName}`.trim()
             return {
               name,
               artist,
               previewUrl,
-              query: `${name} ${artist}`.trim(),
+              queryPrimary,
+              queryByName,
+              queryByCleanName,
+              queryByArtist,
+              queryByArtistAndShortName,
             }
           })
-          .filter((track) => track.query.length > 0)
+          .filter((track) => track.queryPrimary.length > 0 || track.queryByName.length > 0)
 
         if (normalizedTracks.length === 0) {
           sendJson(res, 400, { error: 'No valid tracks to process' })
@@ -151,7 +167,11 @@ function createAppleMusicMiddleware() {
         }
 
         const safePlaylistName = escapeAppleScriptString(playlistName)
-        const trackQueries = toAppleScriptList(normalizedTracks.map((track) => track.query))
+        const trackQueriesPrimary = toAppleScriptList(normalizedTracks.map((track) => track.queryPrimary))
+        const trackQueriesByName = toAppleScriptList(normalizedTracks.map((track) => track.queryByName))
+        const trackQueriesByCleanName = toAppleScriptList(normalizedTracks.map((track) => track.queryByCleanName))
+        const trackQueriesByArtist = toAppleScriptList(normalizedTracks.map((track) => track.queryByArtist))
+        const trackQueriesByArtistAndShortName = toAppleScriptList(normalizedTracks.map((track) => track.queryByArtistAndShortName))
         const trackNames = toAppleScriptList(normalizedTracks.map((track) => track.name))
         const trackArtists = toAppleScriptList(normalizedTracks.map((track) => track.artist))
 
@@ -165,7 +185,11 @@ function createAppleMusicMiddleware() {
 
         const appleScript = `
 set playlistName to "${safePlaylistName}"
-set trackQueries to ${trackQueries}
+set trackQueriesPrimary to ${trackQueriesPrimary}
+set trackQueriesByName to ${trackQueriesByName}
+set trackQueriesByCleanName to ${trackQueriesByCleanName}
+set trackQueriesByArtist to ${trackQueriesByArtist}
+set trackQueriesByArtistAndShortName to ${trackQueriesByArtistAndShortName}
 set trackNames to ${trackNames}
 set trackArtists to ${trackArtists}
 set trackPreviewPaths to ${trackPreviewPaths}
@@ -177,16 +201,35 @@ tell application "Music"
   set pl to make new user playlist with properties {name:playlistName}
   set resultsText to ""
 
-  repeat with i from 1 to count of trackQueries
-    set q to item i of trackQueries
+  repeat with i from 1 to count of trackQueriesPrimary
+    set qPrimary to item i of trackQueriesPrimary
+    set qByName to item i of trackQueriesByName
+    set qByCleanName to item i of trackQueriesByCleanName
+    set qByArtist to item i of trackQueriesByArtist
+    set qByArtistAndShortName to item i of trackQueriesByArtistAndShortName
     set tName to item i of trackNames
     set tArtist to item i of trackArtists
     set previewPath to item i of trackPreviewPaths
 
     try
-      set foundTracks to (search library playlist 1 for q)
-      if (count of foundTracks) > 0 then
-        duplicate item 1 of foundTracks to pl
+      set foundTrack to missing value
+      set usedQuery to ""
+      set candidateQueries to {qPrimary, qByName, qByCleanName, qByArtistAndShortName, qByArtist}
+
+      repeat with candidateQuery in candidateQueries
+        set cq to (contents of candidateQuery) as string
+        if cq is not "" then
+          set foundTracks to (search library playlist 1 for cq)
+          if (count of foundTracks) > 0 then
+            set foundTrack to item 1 of foundTracks
+            set usedQuery to cq
+            exit repeat
+          end if
+        end if
+      end repeat
+
+      if foundTrack is not missing value then
+        duplicate foundTrack to pl
         set resultsText to resultsText & tName & tab & tArtist & tab & "1" & tab & "library" & tab & "" & linefeed
       else if allowPreviewFallback and previewPath is not "" then
         try
