@@ -83,6 +83,77 @@ function clampInteger(value, min, max, fallback) {
   return int
 }
 
+async function runAppleScript(script, timeout = 30000) {
+  const { stdout } = await exec('osascript', ['-e', script], {
+    timeout,
+    maxBuffer: 2 * 1024 * 1024,
+  })
+  return String(stdout || '').trim()
+}
+
+async function getPlaylistStats(playlistName) {
+  const safeName = escapeAppleScriptString(playlistName)
+  const script = `
+set targetName to "${safeName}"
+tell application "Music"
+  set matches to (every user playlist whose name is targetName)
+  set playlistCount to count of matches
+  set maxTrackCount to 0
+  repeat with p in matches
+    try
+      set trackCount to count of every track of p
+      if trackCount > maxTrackCount then set maxTrackCount to trackCount
+    end try
+  end repeat
+  return (playlistCount as string) & tab & (maxTrackCount as string)
+end tell
+`
+
+  try {
+    const raw = await runAppleScript(script)
+    const [playlistCountRaw = '0', maxTrackCountRaw = '0'] = raw.split('\t')
+    const playlistCount = clampInteger(Number(playlistCountRaw), 0, 10_000, 0)
+    const maxTrackCount = clampInteger(Number(maxTrackCountRaw), 0, 100_000, 0)
+    return {
+      exists: playlistCount > 0,
+      playlistCount,
+      maxTrackCount,
+    }
+  } catch {
+    return {
+      exists: false,
+      playlistCount: 0,
+      maxTrackCount: 0,
+    }
+  }
+}
+
+async function ensurePlaylistExists(playlistName) {
+  const safeName = escapeAppleScriptString(playlistName)
+  const script = `
+set targetName to "${safeName}"
+tell application "Music"
+  make new user playlist with properties {name:targetName}
+  return targetName
+end tell
+`
+  await runAppleScript(script, 60000)
+}
+
+async function revealPlaylist(playlistName) {
+  const safeName = escapeAppleScriptString(playlistName)
+  const script = `
+set targetName to "${safeName}"
+tell application "Music"
+  set matches to (every user playlist whose name is targetName)
+  if (count of matches) > 0 then
+    reveal item 1 of matches
+  end if
+end tell
+`
+  await runAppleScript(script, 30000)
+}
+
 function buildShortcutPayload(playlistName, tracks) {
   return {
     name: playlistName,
@@ -148,6 +219,11 @@ async function runShortcutImport(playlistName, tracks, requestedShortcutName) {
     } catch (err) {
       const stderr = String(err?.stderr || '').trim()
       if (stderr) {
+        if (stderr.includes('input of the shortcut could not be processed')) {
+          throw new Error(
+            `Shortcut "${shortcutName}" ne reçoit pas l’entrée attendue. Réimporte shortcuts/TempoMaker.shortcut et relance.`
+          )
+        }
         if (stderr.includes('MPErrorDomain error 5')) {
           throw new Error(
             'Apple Music a refusé l’ajout (MPErrorDomain 5). Vérifie Music > Settings > General > Sync Library activé, la connexion Apple Music active, puis relance.'
@@ -203,13 +279,38 @@ async function runShortcutImport(playlistName, tracks, requestedShortcutName) {
           source: 'shortcut',
         }))
 
+    let playlistStats = await getPlaylistStats(safePlaylistName)
+    if (!playlistStats.exists) {
+      await ensurePlaylistExists(safePlaylistName)
+      playlistStats = await getPlaylistStats(safePlaylistName)
+    }
+
+    if (!playlistStats.exists) {
+      throw new Error(
+        `Shortcut "${shortcutName}" a terminé, mais la playlist "${safePlaylistName}" est introuvable dans Music.`
+      )
+    }
+
+    const verifiedAddedTracks = clampInteger(
+      playlistStats.maxTrackCount,
+      0,
+      totalTracks,
+      addedTracks
+    )
+    const verifiedResults = resultList.map((item, index) => ({
+      ...item,
+      added: index < verifiedAddedTracks ? item.added : false,
+    }))
+
+    await revealPlaylist(safePlaylistName).catch(() => {})
+
     return {
       method: 'shortcut',
       shortcutName,
       playlistName: safePlaylistName,
       totalTracks,
-      addedTracks,
-      results: resultList,
+      addedTracks: verifiedAddedTracks,
+      results: verifiedResults,
     }
   } finally {
     await rm(tempDir, { recursive: true, force: true })
