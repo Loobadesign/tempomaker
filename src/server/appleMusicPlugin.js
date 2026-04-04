@@ -1,5 +1,5 @@
 import { execFile } from 'child_process'
-import { mkdtemp, rm, writeFile } from 'fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import os from 'os'
 import path from 'path'
 import { promisify } from 'util'
@@ -7,8 +7,8 @@ import { promisify } from 'util'
 const exec = promisify(execFile)
 const MAX_REQUEST_BODY_BYTES = 1_000_000
 const TEMP_DIR_PREFIX = 'tempomaker-previews-'
+const SHORTCUT_TEMP_DIR_PREFIX = 'tempomaker-shortcut-'
 const DEFAULT_SHORTCUT_NAME = 'TempoMaker'
-const MAX_SHORTCUT_URL_LENGTH = 7000
 
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, { 'Content-Type': 'application/json' })
@@ -106,28 +106,85 @@ async function runShortcutImport(playlistName, tracks, requestedShortcutName) {
   }
 
   const payload = buildShortcutPayload(playlistName, tracks)
-  const serialized = JSON.stringify(payload)
-  const shortcutUrl = `shortcuts://run-shortcut?name=${encodeURIComponent(shortcutName)}&input=text&text=${encodeURIComponent(serialized)}`
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), SHORTCUT_TEMP_DIR_PREFIX))
+  const inputPath = path.join(tempDir, 'shortcut-input.json')
+  const outputPath = path.join(tempDir, 'shortcut-output.json')
 
-  if (shortcutUrl.length > MAX_SHORTCUT_URL_LENGTH) {
-    throw new Error(
-      'La playlist est trop longue pour un lancement direct du raccourci. Réduis le nombre de titres.'
-    )
-  }
+  try {
+    await writeFile(inputPath, JSON.stringify(payload), 'utf8')
 
-  await exec('open', [shortcutUrl], { timeout: 15000 })
+    const args = [
+      'run',
+      shortcutName,
+      '--input-path',
+      inputPath,
+      '--output-path',
+      outputPath,
+    ]
 
-  return {
-    method: 'shortcut',
-    shortcutName,
-    totalTracks: tracks.length,
-    addedTracks: tracks.length,
-    results: tracks.map((track) => ({
+    let stdout = ''
+    try {
+      const response = await exec('shortcuts', args, {
+        timeout: 600000,
+        maxBuffer: 5 * 1024 * 1024,
+      })
+      stdout = String(response.stdout || '')
+    } catch (err) {
+      const stderr = String(err?.stderr || '').trim()
+      if (stderr) {
+        throw new Error(`Shortcut "${shortcutName}" failed: ${stderr}`)
+      }
+      throw err
+    }
+
+    let outputText = ''
+    try {
+      outputText = await readFile(outputPath, 'utf8')
+    } catch {
+      outputText = stdout
+    }
+
+    let parsed = null
+    try {
+      parsed = JSON.parse(outputText || '{}')
+    } catch {
+      parsed = null
+    }
+
+    const fallbackResults = tracks.map((track) => ({
       name: track.name,
       artist: track.artist,
       added: true,
       source: 'shortcut',
-    })),
+    }))
+
+    const resultList = Array.isArray(parsed?.results)
+      ? parsed.results.map((item, index) => ({
+          name: String(item?.name || tracks[index]?.name || ''),
+          artist: String(item?.artist || tracks[index]?.artist || ''),
+          added: item?.added !== false,
+          source: String(item?.source || 'shortcut'),
+          error: item?.error ? String(item.error) : undefined,
+        }))
+      : fallbackResults
+
+    const addedTracks = typeof parsed?.addedTracks === 'number'
+      ? Math.max(0, parsed.addedTracks)
+      : resultList.filter((item) => item.added).length
+
+    const totalTracks = typeof parsed?.totalTracks === 'number'
+      ? Math.max(0, parsed.totalTracks)
+      : tracks.length
+
+    return {
+      method: 'shortcut',
+      shortcutName,
+      totalTracks,
+      addedTracks,
+      results: resultList,
+    }
+  } finally {
+    await rm(tempDir, { recursive: true, force: true })
   }
 }
 
