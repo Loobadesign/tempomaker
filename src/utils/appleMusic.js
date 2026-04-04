@@ -482,7 +482,7 @@ export async function exportToAppleMusic(tracks, playlistName, onProgress, optio
 
     if (pluginResult.exportedTracks === 0) {
       throw new Error(
-        'Aucun morceau complet n’a pu être ajouté. Les titres doivent être présents dans ta bibliothèque Apple Music, ou active le mode preview fallback.'
+        'Aucun morceau n’a pu être ajouté depuis Apple Music. Vérifie que Sync Library est activé et que Shortcuts a l’accès Apple Music (Media & Apple Music), puis relance.'
       )
     }
 
