@@ -74,6 +74,15 @@ function normalizePlaylistName(value) {
   return name || DEFAULT_PLAYLIST_NAME
 }
 
+function clampInteger(value, min, max, fallback) {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return fallback
+  const int = Math.trunc(num)
+  if (int < min) return min
+  if (int > max) return max
+  return int
+}
+
 function buildShortcutPayload(playlistName, tracks) {
   return {
     name: playlistName,
@@ -163,30 +172,36 @@ async function runShortcutImport(playlistName, tracks, requestedShortcutName) {
       parsed = null
     }
 
-    const fallbackResults = tracks.map((track) => ({
-      name: track.name,
-      artist: track.artist,
-      added: true,
-      source: 'shortcut',
-    }))
+    if (!parsed || typeof parsed !== 'object') {
+      throw new Error(
+        `Shortcut "${shortcutName}" n’a pas renvoyé de JSON valide. Réimporte shortcuts/TempoMaker.shortcut puis réessaie.`
+      )
+    }
+
+    const totalTracks = clampInteger(parsed?.totalTracks, 0, tracks.length, tracks.length)
+    const addedTracks = clampInteger(parsed?.addedTracks, 0, totalTracks, 0)
+    const playlistCreated = parsed?.playlistCreated === 1 || parsed?.playlistCreated === true
+
+    if (addedTracks > 0 && !playlistCreated) {
+      throw new Error(
+        `Shortcut "${shortcutName}" a trouvé des morceaux mais n’a pas créé la playlist. Réimporte shortcuts/TempoMaker.shortcut puis relance l’export.`
+      )
+    }
 
     const resultList = Array.isArray(parsed?.results)
-      ? parsed.results.map((item, index) => ({
+      ? parsed.results.slice(0, tracks.length).map((item, index) => ({
           name: String(item?.name || tracks[index]?.name || ''),
           artist: String(item?.artist || tracks[index]?.artist || ''),
           added: item?.added !== false,
           source: String(item?.source || 'shortcut'),
           error: item?.error ? String(item.error) : undefined,
         }))
-      : fallbackResults
-
-    const addedTracks = typeof parsed?.addedTracks === 'number'
-      ? Math.max(0, parsed.addedTracks)
-      : resultList.filter((item) => item.added).length
-
-    const totalTracks = typeof parsed?.totalTracks === 'number'
-      ? Math.max(0, parsed.totalTracks)
-      : tracks.length
+      : tracks.map((track, index) => ({
+          name: track.name,
+          artist: track.artist,
+          added: index < addedTracks,
+          source: 'shortcut',
+        }))
 
     return {
       method: 'shortcut',

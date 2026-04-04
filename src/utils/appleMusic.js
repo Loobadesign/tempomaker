@@ -388,8 +388,14 @@ async function createResolvedPlaylistWithLocalPlugin(
     throw new Error(`Local Apple Music plugin error: ${reason}`)
   }
 
-  const pluginTotal = body?.totalTracks || totalTracks
-  const pluginExported = body?.addedTracks || 0
+  const pluginTotalRaw = Number(body?.totalTracks)
+  const pluginTotal = Number.isFinite(pluginTotalRaw)
+    ? Math.max(0, Math.trunc(pluginTotalRaw))
+    : totalTracks
+  const pluginExportedRaw = Number(body?.addedTracks)
+  const pluginExported = Number.isFinite(pluginExportedRaw)
+    ? Math.max(0, Math.min(Math.trunc(pluginExportedRaw), pluginTotal))
+    : 0
   const pluginResults = Array.isArray(body?.results) ? body.results : []
   const method = body?.method === 'shortcut' ? 'shortcut' : 'plugin'
   const previewAdded = pluginResults.filter(

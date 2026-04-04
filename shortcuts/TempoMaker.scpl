@@ -8,7 +8,8 @@ end
 
 GetVariable v:Payload:tracks -> v:TrackQueries
 Count "Items" ^(GetVariable v:TrackQueries) -> v:TotalTracks
-List -> v:FoundItems
+Nothing -> v:FoundItems
+Number 0 -> v:PlaylistCreated
 
 RepeatwithEach ^(GetVariable v:TrackQueries)
   SearchiTunesStore search=v:"Repeat Item" category="Music" searchBy="All" results="Songs" region="France" WFItemLimit=3 -> v:PrimaryCandidates
@@ -34,10 +35,12 @@ Count "Items" ^(GetVariable v:FoundItems) -> v:AddedTracks
 If "Is Greater Than" number=0 ^(GetVariable v:AddedTracks)
   GetVariable v:FoundItems
   CreatePlaylist name=v:PlaylistName author="TempoMaker" description="Imported by TempoMaker"
+  Number 1 -> v:PlaylistCreated
 end
 
 Text
 | {
 |   "totalTracks": \(v:TotalTracks),
-|   "addedTracks": \(v:AddedTracks)
+|   "addedTracks": \(v:AddedTracks),
+|   "playlistCreated": \(v:PlaylistCreated)
 | }
