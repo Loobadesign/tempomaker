@@ -80,6 +80,8 @@ export default function PlaylistView({ tracks, tempoKey, genreLabels, onBack }) 
           genreLabels,
           allowPreviewFallback: false,
           allowM3UFallback: false,
+          useShortcut: true,
+          shortcutName: 'TempoMaker',
         }
       )
       setExportDone(result)
@@ -160,6 +162,11 @@ export default function PlaylistView({ tracks, tempoKey, genreLabels, onBack }) 
 
       {exportDone && (
         <p className="text-center text-sm text-brand-gray mb-4">
+          {exportDone.mode === 'shortcut' && (
+            <>
+              Raccourci <code className="bg-brand-dark-3 px-1.5 py-0.5 rounded text-brand-yellow text-xs">{exportDone.shortcutName || 'TempoMaker'}</code> lancé pour créer la playlist dans Apple Music.
+            </>
+          )}
           {exportDone.mode === 'plugin' && 'Playlist créée directement dans Apple Music.'}
           {exportDone.mode === 'plugin+m3u' && (
             <>Playlist créée partiellement dans Apple Music. Un fallback <code className="bg-brand-dark-3 px-1.5 py-0.5 rounded text-brand-yellow text-xs">.m3u</code> a aussi été téléchargé.</>

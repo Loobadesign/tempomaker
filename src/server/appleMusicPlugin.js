@@ -7,6 +7,8 @@ import { promisify } from 'util'
 const exec = promisify(execFile)
 const MAX_REQUEST_BODY_BYTES = 1_000_000
 const TEMP_DIR_PREFIX = 'tempomaker-previews-'
+const DEFAULT_SHORTCUT_NAME = 'TempoMaker'
+const MAX_SHORTCUT_URL_LENGTH = 7000
 
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, { 'Content-Type': 'application/json' })
@@ -59,6 +61,74 @@ function getPreviewExtension(previewUrl) {
     // noop
   }
   return '.m4a'
+}
+
+function normalizeShortcutName(value) {
+  const name = String(value || '').trim()
+  return name || DEFAULT_SHORTCUT_NAME
+}
+
+function buildShortcutPayload(playlistName, tracks) {
+  return {
+    name: playlistName,
+    tracks: tracks.map((track) => `${track.name} - ${track.artist}`.trim()),
+    items: tracks.map((track) => ({
+      name: track.name,
+      artist: track.artist,
+      query: track.queryPrimary || `${track.name} ${track.artist}`.trim(),
+    })),
+  }
+}
+
+async function listInstalledShortcuts() {
+  const { stdout } = await exec('shortcuts', ['list'], {
+    timeout: 15000,
+    maxBuffer: 2 * 1024 * 1024,
+  })
+
+  return String(stdout || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+}
+
+async function runShortcutImport(playlistName, tracks, requestedShortcutName) {
+  const shortcutName = normalizeShortcutName(requestedShortcutName)
+  const installedShortcuts = await listInstalledShortcuts()
+  const shortcutExists = installedShortcuts.some(
+    (name) => name.toLowerCase() === shortcutName.toLowerCase()
+  )
+
+  if (!shortcutExists) {
+    throw new Error(
+      `Shortcut "${shortcutName}" introuvable. Crée-le dans l’app Raccourcis puis réessaie.`
+    )
+  }
+
+  const payload = buildShortcutPayload(playlistName, tracks)
+  const serialized = JSON.stringify(payload)
+  const shortcutUrl = `shortcuts://run-shortcut?name=${encodeURIComponent(shortcutName)}&input=text&text=${encodeURIComponent(serialized)}`
+
+  if (shortcutUrl.length > MAX_SHORTCUT_URL_LENGTH) {
+    throw new Error(
+      'La playlist est trop longue pour un lancement direct du raccourci. Réduis le nombre de titres.'
+    )
+  }
+
+  await exec('open', [shortcutUrl], { timeout: 15000 })
+
+  return {
+    method: 'shortcut',
+    shortcutName,
+    totalTracks: tracks.length,
+    addedTracks: tracks.length,
+    results: tracks.map((track) => ({
+      name: track.name,
+      artist: track.artist,
+      added: true,
+      source: 'shortcut',
+    })),
+  }
 }
 
 async function downloadPreviewFiles(tracks) {
@@ -121,6 +191,8 @@ function createAppleMusicMiddleware() {
 
         const { playlistName, tracks } = parsedBody
         const allowPreviewFallback = parsedBody.allowPreviewFallback === true
+        const useShortcut = parsedBody.useShortcut === true
+        const shortcutName = parsedBody.shortcutName
 
         if (
           typeof playlistName !== 'string'
@@ -163,6 +235,20 @@ function createAppleMusicMiddleware() {
 
         if (normalizedTracks.length === 0) {
           sendJson(res, 400, { error: 'No valid tracks to process' })
+          return
+        }
+
+        if (useShortcut) {
+          const shortcutResult = await runShortcutImport(
+            playlistName,
+            normalizedTracks,
+            shortcutName
+          )
+          sendJson(res, 200, {
+            success: true,
+            playlistName,
+            ...shortcutResult,
+          })
           return
         }
 
@@ -264,6 +350,7 @@ end tell
 
         sendJson(res, 200, {
           success: true,
+          method: 'applescript',
           playlistName,
           totalTracks: normalizedTracks.length,
           addedTracks: added,

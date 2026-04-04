@@ -360,7 +360,9 @@ async function createResolvedPlaylistWithLocalPlugin(
   totalTracks,
   replacedTracks,
   skippedTracks,
-  allowPreviewFallback
+  allowPreviewFallback,
+  useShortcut,
+  shortcutName
 ) {
   const response = await fetch(APPLE_MUSIC_PLUGIN_ENDPOINT, {
     method: 'POST',
@@ -369,6 +371,8 @@ async function createResolvedPlaylistWithLocalPlugin(
       playlistName,
       tracks: resolvedTracks.map(toAppleTrack),
       allowPreviewFallback,
+      useShortcut,
+      shortcutName,
     }),
   })
 
@@ -387,21 +391,27 @@ async function createResolvedPlaylistWithLocalPlugin(
   const pluginTotal = body?.totalTracks || totalTracks
   const pluginExported = body?.addedTracks || 0
   const pluginResults = Array.isArray(body?.results) ? body.results : []
+  const method = body?.method === 'shortcut' ? 'shortcut' : 'plugin'
   const previewAdded = pluginResults.filter(
     (result) => result?.added && result?.source === 'preview'
   ).length
   const libraryAdded = pluginResults.filter(
     (result) => result?.added && result?.source === 'library'
   ).length
+  const shortcutAdded = pluginResults.filter(
+    (result) => result?.added && result?.source === 'shortcut'
+  ).length
 
   return {
-    mode: 'plugin',
+    mode: method,
     totalTracks: pluginTotal,
     exportedTracks: pluginExported,
     skippedTracks: Math.max(pluginTotal - pluginExported, skippedTracks),
     replacedTracks,
     previewAdded,
     libraryAdded,
+    shortcutAdded,
+    shortcutName: body?.shortcutName || '',
     pluginResults,
   }
 }
@@ -421,6 +431,8 @@ export async function exportToAppleMusic(tracks, playlistName, onProgress, optio
   if (onProgress) onProgress(0, tracks.length)
   const allowPreviewFallback = options.allowPreviewFallback === true
   const allowM3UFallback = options.allowM3UFallback === true
+  const useShortcut = options.useShortcut === true
+  const shortcutName = String(options.shortcutName || '').trim()
 
   const criteriaQueries = dedupeStrings(
     String(options.genreLabels || '')
@@ -447,7 +459,9 @@ export async function exportToAppleMusic(tracks, playlistName, onProgress, optio
       tracks.length,
       replacedTracks,
       unresolvedTracks,
-      allowPreviewFallback
+      allowPreviewFallback,
+      useShortcut,
+      shortcutName
     )
 
     // If plugin could not add all resolved tracks, optionally keep a .m3u fallback.
