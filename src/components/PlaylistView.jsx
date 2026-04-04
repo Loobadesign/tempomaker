@@ -76,7 +76,11 @@ export default function PlaylistView({ tracks, tempoKey, genreLabels, onBack }) 
         (current, total) => {
           setExportProgress({ current, total })
         },
-        { genreLabels }
+        {
+          genreLabels,
+          allowPreviewFallback: false,
+          allowM3UFallback: false,
+        }
       )
       setExportDone(result)
     } catch (err) {
@@ -168,6 +172,12 @@ export default function PlaylistView({ tracks, tempoKey, genreLabels, onBack }) 
             <span>
               {' '}
               ({exportDone.replacedTracks || 0} remplacé{exportDone.replacedTracks > 1 ? 's' : ''}, {exportDone.skippedTracks || 0} introuvable{exportDone.skippedTracks > 1 ? 's' : ''})
+            </span>
+          )}
+          {exportDone.previewAdded > 0 && (
+            <span>
+              {' '}
+              ({exportDone.previewAdded} ajouté{exportDone.previewAdded > 1 ? 's' : ''} en aperçu iTunes)
             </span>
           )}
         </p>

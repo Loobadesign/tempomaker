@@ -10,6 +10,7 @@ function toAppleTrack(track) {
   return {
     name,
     artist,
+    previewUrl: track.previewUrl || '',
   }
 }
 
@@ -84,6 +85,7 @@ async function searchITunesByQuery(query, limit = 15) {
       artistName: track.artistName || '',
       primaryGenreName: track.primaryGenreName || '',
       appleMusicUrl: track.trackViewUrl || '',
+      previewUrl: track.previewUrl || '',
       durationMs: track.trackTimeMillis || 0,
     }))
     .filter((track) => track.appleMusicUrl)
@@ -196,6 +198,7 @@ async function resolveTrackFromITunes(track, preferredGenres, usedTrackIds) {
     name: best.trackName || track.name,
     artist: best.artistName || track.artists?.[0]?.name || 'Unknown',
     url: best.appleMusicUrl,
+    previewUrl: best.previewUrl || '',
     duration: Math.round((best.durationMs || 0) / 1000),
     primaryGenreName: best.primaryGenreName || '',
     source: 'original',
@@ -273,6 +276,7 @@ async function resolveReplacementTrack(track, playlistName, preferredGenres, use
     name: best.trackName || sanitizeTrackName(track.name),
     artist: best.artistName || track.artists?.[0]?.name || 'Unknown',
     url: best.appleMusicUrl,
+    previewUrl: best.previewUrl || '',
     duration: Math.round((best.durationMs || 0) / 1000),
     primaryGenreName: best.primaryGenreName || '',
     source: 'replacement',
@@ -355,7 +359,8 @@ async function createResolvedPlaylistWithLocalPlugin(
   resolvedTracks,
   totalTracks,
   replacedTracks,
-  skippedTracks
+  skippedTracks,
+  allowPreviewFallback
 ) {
   const response = await fetch(APPLE_MUSIC_PLUGIN_ENDPOINT, {
     method: 'POST',
@@ -363,6 +368,7 @@ async function createResolvedPlaylistWithLocalPlugin(
     body: JSON.stringify({
       playlistName,
       tracks: resolvedTracks.map(toAppleTrack),
+      allowPreviewFallback,
     }),
   })
 
@@ -380,6 +386,13 @@ async function createResolvedPlaylistWithLocalPlugin(
 
   const pluginTotal = body?.totalTracks || totalTracks
   const pluginExported = body?.addedTracks || 0
+  const pluginResults = Array.isArray(body?.results) ? body.results : []
+  const previewAdded = pluginResults.filter(
+    (result) => result?.added && result?.source === 'preview'
+  ).length
+  const libraryAdded = pluginResults.filter(
+    (result) => result?.added && result?.source === 'library'
+  ).length
 
   return {
     mode: 'plugin',
@@ -387,7 +400,9 @@ async function createResolvedPlaylistWithLocalPlugin(
     exportedTracks: pluginExported,
     skippedTracks: Math.max(pluginTotal - pluginExported, skippedTracks),
     replacedTracks,
-    pluginResults: Array.isArray(body?.results) ? body.results : [],
+    previewAdded,
+    libraryAdded,
+    pluginResults,
   }
 }
 
@@ -404,6 +419,8 @@ export async function exportToAppleMusic(tracks, playlistName, onProgress, optio
   }
 
   if (onProgress) onProgress(0, tracks.length)
+  const allowPreviewFallback = options.allowPreviewFallback === true
+  const allowM3UFallback = options.allowM3UFallback === true
 
   const criteriaQueries = dedupeStrings(
     String(options.genreLabels || '')
@@ -429,11 +446,12 @@ export async function exportToAppleMusic(tracks, playlistName, onProgress, optio
       resolvedTracks,
       tracks.length,
       replacedTracks,
-      unresolvedTracks
+      unresolvedTracks,
+      allowPreviewFallback
     )
 
-    // If plugin could not add all resolved tracks, keep a .m3u fallback.
-    if (pluginResult.exportedTracks < resolvedTracks.length) {
+    // If plugin could not add all resolved tracks, optionally keep a .m3u fallback.
+    if (pluginResult.exportedTracks < resolvedTracks.length && allowM3UFallback) {
       const m3uResult = exportResolvedTracksAsM3U(resolvedTracks, playlistName, tracks.length)
       return {
         ...pluginResult,
@@ -442,8 +460,18 @@ export async function exportToAppleMusic(tracks, playlistName, onProgress, optio
       }
     }
 
+    if (pluginResult.exportedTracks === 0) {
+      throw new Error(
+        'Aucun morceau complet n’a pu être ajouté. Les titres doivent être présents dans ta bibliothèque Apple Music, ou active le mode preview fallback.'
+      )
+    }
+
     return pluginResult
-  } catch {
+  } catch (error) {
+    if (!allowM3UFallback) {
+      throw error
+    }
+
     return exportResolvedTracksAsM3U(resolvedTracks, playlistName, tracks.length)
   }
 }
