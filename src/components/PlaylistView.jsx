@@ -57,7 +57,8 @@ export default function PlaylistView({ tracks, tempoKey, genreLabels, onBack }) 
   const [copied, setCopied] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [exportProgress, setExportProgress] = useState({ current: 0, total: 0 })
-  const [exportDone, setExportDone] = useState(null) // number of exported tracks
+  const [exportDone, setExportDone] = useState(null)
+  const [exportError, setExportError] = useState(null)
   const range = TEMPO_RANGES[tempoKey]
 
   const playlistName = `TempoMaker — ${range.label}`
@@ -65,15 +66,26 @@ export default function PlaylistView({ tracks, tempoKey, genreLabels, onBack }) 
   const handleAppleMusicExport = async () => {
     setExporting(true)
     setExportDone(null)
+    setExportError(null)
     setExportProgress({ current: 0, total: tracks.length })
 
     try {
-      const count = await exportToAppleMusic(tracks, playlistName, (current, total) => {
-        setExportProgress({ current, total })
-      })
-      setExportDone(count)
+      const result = await exportToAppleMusic(
+        tracks,
+        playlistName,
+        (current, total) => {
+          setExportProgress({ current, total })
+        },
+        { genreLabels }
+      )
+      setExportDone(result)
     } catch (err) {
       console.error('Apple Music export error:', err)
+      setExportError(
+        err instanceof Error
+          ? err.message
+          : "L'export Apple Music a échoué."
+      )
     } finally {
       setExporting(false)
     }
@@ -130,7 +142,7 @@ export default function PlaylistView({ tracks, tempoKey, genreLabels, onBack }) 
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <polyline points="20 6 9 17 4 12" />
             </svg>
-            {exportDone} morceaux exportés ! Ouvre le fichier .m3u
+            {exportDone.exportedTracks}/{exportDone.totalTracks} morceaux exportés
           </>
         ) : (
           <>
@@ -144,7 +156,26 @@ export default function PlaylistView({ tracks, tempoKey, genreLabels, onBack }) 
 
       {exportDone && (
         <p className="text-center text-sm text-brand-gray mb-4">
-          Double-clique sur le fichier <code className="bg-brand-dark-3 px-1.5 py-0.5 rounded text-brand-yellow text-xs">.m3u</code> téléchargé pour l'ouvrir dans Apple Music
+          {exportDone.mode === 'plugin' && 'Playlist créée directement dans Apple Music.'}
+          {exportDone.mode === 'plugin+m3u' && (
+            <>Playlist créée partiellement dans Apple Music. Un fallback <code className="bg-brand-dark-3 px-1.5 py-0.5 rounded text-brand-yellow text-xs">.m3u</code> a aussi été téléchargé.</>
+          )}
+          {exportDone.mode === 'm3u' && (
+            <>Export local indisponible, fallback <code className="bg-brand-dark-3 px-1.5 py-0.5 rounded text-brand-yellow text-xs">.m3u</code> téléchargé. Ouvre le fichier dans Apple Music.</>
+          )}
+
+          {(exportDone.replacedTracks > 0 || exportDone.skippedTracks > 0) && (
+            <span>
+              {' '}
+              ({exportDone.replacedTracks || 0} remplacé{exportDone.replacedTracks > 1 ? 's' : ''}, {exportDone.skippedTracks || 0} introuvable{exportDone.skippedTracks > 1 ? 's' : ''})
+            </span>
+          )}
+        </p>
+      )}
+
+      {exportError && (
+        <p className="text-center text-sm text-red-400 mb-4">
+          {exportError}
         </p>
       )}
 
