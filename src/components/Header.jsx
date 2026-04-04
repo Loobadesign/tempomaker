@@ -1,4 +1,4 @@
-export default function Header({ user, onLogout }) {
+export default function Header() {
   return (
     <header className="flex items-center justify-between px-6 py-4 border-b border-brand-dark-3">
       <div className="flex items-center gap-3">
@@ -13,29 +13,6 @@ export default function Header({ user, onLogout }) {
           Tempo<span className="text-brand-yellow">Maker</span>
         </span>
       </div>
-
-      {user && (
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            {user.images?.[0]?.url && (
-              <img
-                src={user.images[0].url}
-                alt={user.display_name}
-                className="w-8 h-8 rounded-full"
-              />
-            )}
-            <span className="text-sm text-brand-gray-light hidden sm:inline">
-              {user.display_name}
-            </span>
-          </div>
-          <button
-            onClick={onLogout}
-            className="text-sm text-brand-gray hover:text-brand-light transition-colors"
-          >
-            Déconnexion
-          </button>
-        </div>
-      )}
     </header>
   )
 }

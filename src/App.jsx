@@ -1,61 +1,15 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState } from 'react'
 import Header from './components/Header'
-import LoginScreen from './components/LoginScreen'
 import TempoSelector from './components/TempoSelector'
 import PlaylistView from './components/PlaylistView'
-import {
-  getAccessToken,
-  exchangeCode,
-  getUserProfile,
-  generatePlaylistByTempo,
-  logout,
-} from './utils/spotify'
+import { generatePlaylistByTempo } from './utils/spotify'
 
 function App() {
-  const [token, setToken] = useState(null)
-  const [user, setUser] = useState(null)
   const [view, setView] = useState('select') // 'select' | 'playlist'
   const [selectedTempo, setSelectedTempo] = useState(null)
   const [playlist, setPlaylist] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-
-  // Handle OAuth callback (guard against StrictMode double-run)
-  const exchangingRef = useRef(false)
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const code = params.get('code')
-
-    if (code && !exchangingRef.current) {
-      exchangingRef.current = true
-      // Remove code from URL immediately to prevent re-use
-      window.history.replaceState({}, '', '/')
-      exchangeCode(code)
-        .then((data) => {
-          if (data.access_token) {
-            setToken(data.access_token)
-          }
-        })
-        .catch((err) => {
-          console.error('Token exchange failed:', err)
-        })
-    } else if (!code) {
-      const t = getAccessToken()
-      if (t) setToken(t)
-    }
-  }, [])
-
-  // Fetch user profile
-  useEffect(() => {
-    if (token) {
-      getUserProfile(token)
-        .then(setUser)
-        .catch(() => {
-          logout()
-          setToken(null)
-        })
-    }
-  }, [token])
 
   const handleTempoSelect = async (tempoKey) => {
     setSelectedTempo(tempoKey)
@@ -63,7 +17,7 @@ function App() {
     setError(null)
 
     try {
-      const tracks = await generatePlaylistByTempo(token, tempoKey)
+      const tracks = await generatePlaylistByTempo(tempoKey)
       setPlaylist(tracks)
       setView('playlist')
     } catch (err) {
@@ -80,31 +34,43 @@ function App() {
     setSelectedTempo(null)
   }
 
-  const handleLogout = () => {
-    logout()
-    setToken(null)
-    setUser(null)
-    setView('select')
-  }
-
-  if (!token) {
-    return <LoginScreen />
-  }
-
   return (
     <div className="min-h-screen flex flex-col">
-      <Header user={user} onLogout={handleLogout} />
+      <Header />
 
       <main className="flex-1">
         {view === 'select' && (
           <>
+            {/* Hero */}
+            <div className="text-center pt-16 pb-4 px-6">
+              <div className="mb-6 flex justify-center">
+                <div
+                  className="w-16 h-16 bg-brand-yellow rounded-2xl flex items-center justify-center shadow-lg shadow-brand-yellow/20"
+                  style={{ animation: 'pulse-glow 3s ease-in-out infinite' }}
+                >
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#0A0A0A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 18V5l12-2v13" />
+                    <circle cx="6" cy="18" r="3" />
+                    <circle cx="18" cy="16" r="3" />
+                  </svg>
+                </div>
+              </div>
+              <h1 className="text-4xl sm:text-5xl font-black tracking-tight mb-3">
+                Tempo<span className="text-brand-yellow">Maker</span>
+              </h1>
+              <p className="text-brand-gray text-lg max-w-md mx-auto">
+                Choisis un rythme, on génère ta playlist.
+              </p>
+            </div>
+
             <TempoSelector
               onSelect={handleTempoSelect}
               loading={loading}
               selectedTempo={selectedTempo}
             />
+
             {error && (
-              <div className="max-w-4xl mx-auto px-6">
+              <div className="max-w-4xl mx-auto px-6 pb-8">
                 <div className="bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl px-4 py-3 text-sm text-center">
                   {error}
                 </div>
@@ -123,7 +89,7 @@ function App() {
       </main>
 
       <footer className="text-center py-6 text-xs text-brand-gray border-t border-brand-dark-3">
-        TempoMaker &mdash; Propulsé par Spotify API
+        TempoMaker &mdash; Propulsé par Deezer API
       </footer>
     </div>
   )
