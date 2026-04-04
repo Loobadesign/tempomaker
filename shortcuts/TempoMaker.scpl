@@ -8,8 +8,7 @@ end
 
 GetVariable v:Payload:tracks -> v:TrackQueries
 Count "Items" ^(GetVariable v:TrackQueries) -> v:TotalTracks
-Number 0 -> v:AddedTracks
-CreatePlaylist name=v:PlaylistName author="TempoMaker" description="Imported by TempoMaker"
+List -> v:FoundItems
 
 RepeatwithEach ^(GetVariable v:TrackQueries)
   SearchiTunesStore search=v:"Repeat Item" category="Music" searchBy="All" results="Songs" region="France" WFItemLimit=3 -> v:PrimaryCandidates
@@ -17,8 +16,7 @@ RepeatwithEach ^(GetVariable v:TrackQueries)
 
   If "Is Greater Than" number=0 ^(GetVariable v:PrimaryCount)
     GetItemfromList get="First Item" ^(GetVariable v:PrimaryCandidates)
-    AddtoPlaylist v:PlaylistName
-    Calculate "+" 1 ^(GetVariable v:AddedTracks) -> v:AddedTracks
+    AddtoVariable v:FoundItems
   otherwise
     SplitText separator="Custom" custom=" - " ^(GetVariable v:"Repeat Item") -> v:SplitQuery
     GetItemfromList get="First Item" ^(GetVariable v:SplitQuery) -> v:FallbackQuery
@@ -27,10 +25,15 @@ RepeatwithEach ^(GetVariable v:TrackQueries)
 
     If "Is Greater Than" number=0 ^(GetVariable v:FallbackCount)
       GetItemfromList get="First Item" ^(GetVariable v:FallbackCandidates)
-      AddtoPlaylist v:PlaylistName
-      Calculate "+" 1 ^(GetVariable v:AddedTracks) -> v:AddedTracks
+      AddtoVariable v:FoundItems
     end
   end
+end
+
+Count "Items" ^(GetVariable v:FoundItems) -> v:AddedTracks
+If "Is Greater Than" number=0 ^(GetVariable v:AddedTracks)
+  GetVariable v:FoundItems
+  CreatePlaylist name=v:PlaylistName author="TempoMaker" description="Imported by TempoMaker"
 end
 
 Text

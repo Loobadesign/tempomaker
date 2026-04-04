@@ -114,7 +114,7 @@ async function runShortcutImport(playlistName, tracks, requestedShortcutName) {
 
   const payload = buildShortcutPayload(safePlaylistName, tracks)
   const tempDir = await mkdtemp(path.join(os.tmpdir(), SHORTCUT_TEMP_DIR_PREFIX))
-  const inputPath = path.join(tempDir, 'shortcut-input.json')
+  const inputPath = path.join(tempDir, 'shortcut-input.txt')
   const outputPath = path.join(tempDir, 'shortcut-output.json')
 
   try {
@@ -139,6 +139,11 @@ async function runShortcutImport(playlistName, tracks, requestedShortcutName) {
     } catch (err) {
       const stderr = String(err?.stderr || '').trim()
       if (stderr) {
+        if (stderr.includes('MPErrorDomain error 5')) {
+          throw new Error(
+            'Apple Music a refusé l’ajout (MPErrorDomain 5). Vérifie Music > Settings > General > Sync Library activé, la connexion Apple Music active, puis relance.'
+          )
+        }
         throw new Error(`Shortcut "${shortcutName}" failed: ${stderr}`)
       }
       throw err
