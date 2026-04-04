@@ -192,6 +192,11 @@ async function runShortcutImport(playlistName, tracks, requestedShortcutName) {
     )
   }
 
+  // Ensure the playlist target exists before running the shortcut.
+  // Some shortcut variants fail with "playlist could not be found"
+  // if Add to Playlist runs before Create Playlist resolves.
+  await ensurePlaylistExists(safePlaylistName)
+
   const payload = buildShortcutPayload(safePlaylistName, tracks)
   const tempDir = await mkdtemp(path.join(os.tmpdir(), SHORTCUT_TEMP_DIR_PREFIX))
   const inputPath = path.join(tempDir, 'shortcut-input.txt')
