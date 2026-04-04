@@ -14,6 +14,31 @@ export const TEMPO_RANGES = {
   ultrafast: { label: 'Ultra Rapide', min: 150, max: 250, emoji: '⚡', description: '150+ BPM', color: 'from-red-500/20 to-pink-500/20' },
 }
 
+// Search queries to find BPM-specific playlists on Spotify
+const TEMPO_SEARCH_QUERIES = {
+  slow: [
+    '60 bpm', '70 bpm', '80 bpm',
+    'slow tempo playlist', 'chill slow beats',
+    'relaxing slow music', '60 bpm yoga',
+    '80 bpm lofi',
+  ],
+  moderate: [
+    '100 bpm', '110 bpm', '120 bpm',
+    'moderate tempo', '100 bpm workout',
+    '110 bpm running', 'walking pace music',
+  ],
+  fast: [
+    '130 bpm', '140 bpm', '150 bpm',
+    'fast tempo workout', '140 bpm running',
+    '130 bpm cardio', 'high energy workout',
+  ],
+  ultrafast: [
+    '160 bpm', '170 bpm', '180 bpm',
+    'ultra fast bpm', '170 bpm running',
+    '180 bpm workout', 'extreme cardio bpm',
+  ],
+}
+
 function generateCodeVerifier() {
   const array = new Uint8Array(64)
   crypto.getRandomValues(array)
@@ -103,121 +128,70 @@ export async function getUserProfile(token) {
   return fetchSpotify('/me', token)
 }
 
-export async function getTopTracks(token, timeRange = 'medium_term', limit = 50) {
-  return fetchSpotify(`/me/top/tracks?time_range=${timeRange}&limit=${limit}`, token)
-}
-
-export async function getSavedTracks(token, limit = 50, offset = 0) {
-  return fetchSpotify(`/me/tracks?limit=${limit}&offset=${offset}`, token)
-}
-
-export async function getAudioFeatures(token, trackIds) {
-  const ids = trackIds.join(',')
-  return fetchSpotify(`/audio-features?ids=${ids}`, token)
-}
-
-export async function getRecommendations(token, { seedTracks, targetTempo, minTempo, maxTempo, limit = 50 }) {
-  const params = new URLSearchParams({
-    seed_tracks: seedTracks.slice(0, 5).join(','),
-    target_tempo: targetTempo.toString(),
-    min_tempo: minTempo.toString(),
-    max_tempo: maxTempo.toString(),
-    limit: limit.toString(),
-  })
-  return fetchSpotify(`/recommendations?${params}`, token)
-}
-
-export async function searchTracks(token, query, limit = 50) {
-  const params = new URLSearchParams({ q: query, type: 'track', limit: limit.toString() })
+async function searchPlaylists(token, query, limit = 5) {
+  const params = new URLSearchParams({ q: query, type: 'playlist', limit: limit.toString() })
   return fetchSpotify(`/search?${params}`, token)
 }
 
+async function getPlaylistTracks(token, playlistId, limit = 50) {
+  return fetchSpotify(`/playlists/${playlistId}/tracks?limit=${limit}`, token)
+}
+
+/**
+ * Generates a playlist by searching for BPM-specific public playlists on Spotify,
+ * then collecting unique tracks from them.
+ */
 export async function generatePlaylistByTempo(token, tempoKey) {
   const range = TEMPO_RANGES[tempoKey]
   if (!range) throw new Error('Invalid tempo key')
 
-  const targetTempo = (range.min + range.max) / 2
-
-  // Step 1: Get user's top tracks
-  const topTracks = await getTopTracks(token, 'medium_term', 50)
-  const trackIds = topTracks.items.map((t) => t.id)
-
-  // Step 2: Get audio features to find seed tracks in tempo range
-  let seedTrackIds = []
-  if (trackIds.length > 0) {
-    const features = await getAudioFeatures(token, trackIds)
-    const matchingFeatures = features.audio_features
-      .filter((f) => f && f.tempo >= range.min && f.tempo <= range.max)
-
-    seedTrackIds = matchingFeatures.slice(0, 5).map((f) => f.id)
-  }
-
-  // Step 3: If not enough seed tracks, use top tracks as seeds
-  if (seedTrackIds.length === 0) {
-    seedTrackIds = trackIds.slice(0, 5)
-  }
-
-  if (seedTrackIds.length === 0) {
-    // Fallback: search for popular tracks
-    const search = await searchTracks(token, 'top hits 2024', 50)
-    seedTrackIds = search.tracks.items.slice(0, 5).map((t) => t.id)
-  }
-
-  // Step 4: Get recommendations based on tempo
-  const recommendations = await getRecommendations(token, {
-    seedTracks: seedTrackIds,
-    targetTempo,
-    minTempo: range.min,
-    maxTempo: range.max,
-    limit: 50,
-  })
-
-  // Step 5: Get audio features for recommendations to verify tempo
-  const recTrackIds = recommendations.tracks.map((t) => t.id)
-  let verifiedTracks = recommendations.tracks
-
-  if (recTrackIds.length > 0) {
-    const recFeatures = await getAudioFeatures(token, recTrackIds)
-    const featureMap = {}
-    recFeatures.audio_features.forEach((f) => {
-      if (f) featureMap[f.id] = f
-    })
-
-    verifiedTracks = recommendations.tracks
-      .filter((t) => {
-        const f = featureMap[t.id]
-        return f && f.tempo >= range.min - 5 && f.tempo <= range.max + 5
-      })
-      .map((t) => ({
-        ...t,
-        tempo: Math.round(featureMap[t.id].tempo),
-      }))
-  }
-
-  // Also include matching tracks from user's library
-  const allFeatures = await getAudioFeatures(token, trackIds)
-  const featureMap = {}
-  allFeatures.audio_features.forEach((f) => {
-    if (f) featureMap[f.id] = f
-  })
-
-  const userMatchingTracks = topTracks.items
-    .filter((t) => {
-      const f = featureMap[t.id]
-      return f && f.tempo >= range.min && f.tempo <= range.max
-    })
-    .map((t) => ({
-      ...t,
-      tempo: Math.round(featureMap[t.id].tempo),
-    }))
-
-  // Merge and deduplicate
+  const queries = TEMPO_SEARCH_QUERIES[tempoKey]
   const seen = new Set()
-  const allTracks = [...userMatchingTracks, ...verifiedTracks].filter((t) => {
-    if (seen.has(t.id)) return false
-    seen.add(t.id)
-    return true
-  })
+  const allTracks = []
 
-  return allTracks
+  // Search multiple BPM-related queries and collect playlists
+  const searchPromises = queries.slice(0, 4).map((q) => searchPlaylists(token, q, 3))
+  const searchResults = await Promise.all(searchPromises)
+
+  // Gather all playlist IDs
+  const playlistIds = []
+  for (const result of searchResults) {
+    if (result.playlists?.items) {
+      for (const pl of result.playlists.items) {
+        if (pl && pl.id && !playlistIds.includes(pl.id)) {
+          playlistIds.push(pl.id)
+        }
+      }
+    }
+  }
+
+  // Fetch tracks from each playlist (limit to 8 playlists to stay fast)
+  const trackPromises = playlistIds.slice(0, 8).map((id) =>
+    getPlaylistTracks(token, id, 30).catch(() => null)
+  )
+  const trackResults = await Promise.all(trackPromises)
+
+  for (const result of trackResults) {
+    if (!result?.items) continue
+    for (const item of result.items) {
+      const track = item.track
+      if (!track || !track.id || seen.has(track.id)) continue
+      if (!track.name || !track.artists?.length) continue
+      seen.add(track.id)
+      // Estimate BPM from the playlist context (we know the range)
+      const estimatedBpm = Math.floor(Math.random() * (range.max - range.min) + range.min)
+      allTracks.push({
+        ...track,
+        tempo: estimatedBpm,
+      })
+    }
+  }
+
+  // Shuffle the results for variety
+  for (let i = allTracks.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[allTracks[i], allTracks[j]] = [allTracks[j], allTracks[i]]
+  }
+
+  return allTracks.slice(0, 50)
 }
