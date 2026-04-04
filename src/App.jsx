@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Header from './components/Header'
 import LoginScreen from './components/LoginScreen'
 import TempoSelector from './components/TempoSelector'
@@ -20,12 +20,16 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
-  // Handle OAuth callback
+  // Handle OAuth callback (guard against StrictMode double-run)
+  const exchangingRef = useRef(false)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const code = params.get('code')
 
-    if (code) {
+    if (code && !exchangingRef.current) {
+      exchangingRef.current = true
+      // Remove code from URL immediately to prevent re-use
+      window.history.replaceState({}, '', '/')
       exchangeCode(code)
         .then((data) => {
           if (data.access_token) {
@@ -35,10 +39,7 @@ function App() {
         .catch((err) => {
           console.error('Token exchange failed:', err)
         })
-        .finally(() => {
-          window.history.replaceState({}, '', '/')
-        })
-    } else {
+    } else if (!code) {
       const t = getAccessToken()
       if (t) setToken(t)
     }
