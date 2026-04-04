@@ -26,11 +26,18 @@ function App() {
     const code = params.get('code')
 
     if (code) {
-      window.history.replaceState({}, '', '/')
-      exchangeCode(code).then(() => {
-        const t = getAccessToken()
-        if (t) setToken(t)
-      })
+      exchangeCode(code)
+        .then((data) => {
+          if (data.access_token) {
+            setToken(data.access_token)
+          }
+        })
+        .catch((err) => {
+          console.error('Token exchange failed:', err)
+        })
+        .finally(() => {
+          window.history.replaceState({}, '', '/')
+        })
     } else {
       const t = getAccessToken()
       if (t) setToken(t)
