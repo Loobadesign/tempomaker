@@ -79,19 +79,30 @@ export async function redirectToSpotifyAuth() {
 export async function exchangeCode(code) {
   const verifier = localStorage.getItem('spotify_code_verifier')
 
+  console.log('[TempoMaker] Exchange code debug:', {
+    hasVerifier: !!verifier,
+    redirectUri: REDIRECT_URI,
+    clientId: CLIENT_ID ? CLIENT_ID.slice(0, 8) + '...' : 'MISSING',
+    codeLength: code?.length,
+  })
+
+  const body = new URLSearchParams({
+    client_id: CLIENT_ID,
+    grant_type: 'authorization_code',
+    code,
+    redirect_uri: REDIRECT_URI,
+    code_verifier: verifier,
+  })
+
   const response = await fetch('https://accounts.spotify.com/api/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: CLIENT_ID,
-      grant_type: 'authorization_code',
-      code,
-      redirect_uri: REDIRECT_URI,
-      code_verifier: verifier,
-    }),
+    body,
   })
 
   const data = await response.json()
+  console.log('[TempoMaker] Token response:', response.status, data)
+
   if (data.access_token) {
     localStorage.setItem('spotify_access_token', data.access_token)
     localStorage.setItem('spotify_refresh_token', data.refresh_token)
