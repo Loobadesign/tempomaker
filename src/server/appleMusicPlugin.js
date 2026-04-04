@@ -12,6 +12,43 @@ function sendJson(res, status, data) {
   res.end(JSON.stringify(data))
 }
 
+/**
+ * Strategy: For each track, open its Apple Music URL,
+ * play the track (this adds it to the library),
+ * then duplicate the current track to the playlist.
+ * This works with the full Apple Music catalog, not just local library.
+ */
+function buildAddScript(playlistName, trackUrl) {
+  const safePl = escapeAS(playlistName)
+  const safeUrl = escapeAS(trackUrl)
+
+  return `
+tell application "Music"
+  -- Open the Apple Music URL (navigates to the song)
+  open location "${safeUrl}"
+  delay 2
+
+  -- Play the track — this adds it to the library
+  play
+  delay 2
+
+  -- Now current track should be the one we want
+  set ct to current track
+  set ctName to name of ct
+  set ctArtist to artist of ct
+
+  -- Stop playback
+  pause
+
+  -- Duplicate the current track to our playlist
+  set targetPlaylist to (first user playlist whose name is "${safePl}")
+  duplicate ct to targetPlaylist
+
+  return "added:" & ctName & " - " & ctArtist
+end tell
+`
+}
+
 export default function appleMusicPlugin() {
   return {
     name: 'apple-music-local',
@@ -35,9 +72,6 @@ export default function appleMusicPlugin() {
 
             const safeName = escapeAS(playlistName)
 
-            // Process tracks one at a time using individual osascript calls
-            // This is more reliable than one big script
-
             // Step 1: Create the playlist
             const createScript = `
 tell application "Music"
@@ -49,77 +83,42 @@ end tell`
             await exec('osascript', ['-e', createScript], { timeout: 15000 })
             console.log(`[AppleMusic] Created playlist "${playlistName}"`)
 
-            // Step 2: For each track, open URL then add to playlist
+            // Step 2: Add each track by opening URL + playing + duplicating
             let addedCount = 0
 
             for (let i = 0; i < tracks.length; i++) {
               const t = tracks[i]
-              const safeName2 = escapeAS(playlistName)
-              const safeUrl = escapeAS(t.url)
-              const safeTName = escapeAS(t.name)
-              const safeTArtist = escapeAS(t.artist)
-
-              const addScript = `
-tell application "Music"
-  -- Open the Apple Music URL
-  open location "${safeUrl}"
-  delay 3
-
-  -- Get the track that's currently selected/playing
-  set targetPlaylist to (first user playlist whose name is "${safeName2}")
-
-  -- Try to find the track by searching
-  set searchQ to "${safeTName} ${safeTArtist}"
-  set results to (search library playlist 1 for searchQ)
-
-  if (count of results) > 0 then
-    -- Find the best match (exact name match)
-    repeat with r in results
-      if name of r contains "${safeTName}" then
-        duplicate r to targetPlaylist
-        return "added"
-      end if
-    end repeat
-    -- Fallback: add the first result
-    duplicate item 1 of results to targetPlaylist
-    return "added"
-  end if
-
-  -- Fallback: search by name only
-  set results2 to (search library playlist 1 for "${safeTName}")
-  if (count of results2) > 0 then
-    duplicate item 1 of results2 to targetPlaylist
-    return "added"
-  end if
-
-  return "notfound"
-end tell`
 
               try {
-                const { stdout } = await exec('osascript', ['-e', addScript], {
-                  timeout: 15000,
+                const script = buildAddScript(playlistName, t.url)
+                const { stdout } = await exec('osascript', ['-e', script], {
+                  timeout: 20000,
                 })
                 const result = stdout.trim()
-                if (result === 'added') {
+                if (result.startsWith('added:')) {
                   addedCount++
-                  console.log(`[AppleMusic] [${i + 1}/${tracks.length}] Added: ${t.name} - ${t.artist}`)
-                } else {
-                  console.log(`[AppleMusic] [${i + 1}/${tracks.length}] Not found: ${t.name} - ${t.artist}`)
+                  const actualTrack = result.slice(6)
+                  console.log(`[AppleMusic] [${i + 1}/${tracks.length}] Added: ${actualTrack}`)
                 }
               } catch (err) {
-                console.log(`[AppleMusic] [${i + 1}/${tracks.length}] Error: ${t.name} - ${err.message}`)
+                console.log(`[AppleMusic] [${i + 1}/${tracks.length}] Failed: ${t.name} - ${t.artist} (${err.message.slice(0, 60)})`)
               }
             }
 
-            // Step 3: Reveal the playlist
-            const revealScript = `
+            // Step 3: Stop playback & reveal playlist
+            const finalScript = `
 tell application "Music"
-  set targetPlaylist to (first user playlist whose name is "${safeName}")
-  reveal targetPlaylist
+  try
+    pause
+  end try
+  try
+    set targetPlaylist to (first user playlist whose name is "${safeName}")
+    reveal targetPlaylist
+  end try
 end tell`
-            await exec('osascript', ['-e', revealScript], { timeout: 10000 }).catch(() => {})
+            await exec('osascript', ['-e', finalScript], { timeout: 10000 }).catch(() => {})
 
-            console.log(`[AppleMusic] Done: ${addedCount}/${tracks.length} added`)
+            console.log(`[AppleMusic] Done: ${addedCount}/${tracks.length} added to "${playlistName}"`)
 
             sendJson(res, 200, {
               success: true,
