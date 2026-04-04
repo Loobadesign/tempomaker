@@ -1,28 +1,33 @@
 GetTextfromInput
 GetDictionaryfromInput -> v:Payload
 GetVariable v:Payload:name -> v:PlaylistName
-GetVariable v:Payload:items -> v:Items
-Count "Items" ^(GetVariable v:Items) -> v:TotalTracks
-Number 0 -> v:AddedTracks
-CreatePlaylist name=v:PlaylistName author="TempoMaker" description="Imported by TempoMaker" -> v:CreatedPlaylist
+Count "Characters" ^(GetVariable v:PlaylistName) -> v:PlaylistNameLength
+If "Is Less Than" number=1 ^(GetVariable v:PlaylistNameLength)
+  Text "TempoMaker Import" -> v:PlaylistName
+end
 
-RepeatwithEach ^(GetVariable v:Items)
-  GetVariable v:"Repeat Item":query -> v:QueryPrimary
-  GetVariable v:"Repeat Item":name -> v:TrackName
-  SearchiTunesStore search=v:QueryPrimary category="Music" searchBy="All" results="Songs" region="France" WFItemLimit=3 -> v:PrimaryCandidates
+GetVariable v:Payload:tracks -> v:TrackQueries
+Count "Items" ^(GetVariable v:TrackQueries) -> v:TotalTracks
+Number 0 -> v:AddedTracks
+CreatePlaylist name=v:PlaylistName author="TempoMaker" description="Imported by TempoMaker"
+
+RepeatwithEach ^(GetVariable v:TrackQueries)
+  SearchiTunesStore search=v:"Repeat Item" category="Music" searchBy="All" results="Songs" region="France" WFItemLimit=3 -> v:PrimaryCandidates
   Count "Items" ^(GetVariable v:PrimaryCandidates) -> v:PrimaryCount
 
   If "Is Greater Than" number=0 ^(GetVariable v:PrimaryCount)
     GetItemfromList get="First Item" ^(GetVariable v:PrimaryCandidates)
-    AddtoPlaylist v:CreatedPlaylist
+    AddtoPlaylist v:PlaylistName
     Calculate "+" 1 ^(GetVariable v:AddedTracks) -> v:AddedTracks
   otherwise
-    SearchiTunesStore search=v:TrackName category="Music" searchBy="All" results="Songs" region="France" WFItemLimit=3 -> v:FallbackCandidates
+    SplitText separator="Custom" custom=" - " ^(GetVariable v:"Repeat Item") -> v:SplitQuery
+    GetItemfromList get="First Item" ^(GetVariable v:SplitQuery) -> v:FallbackQuery
+    SearchiTunesStore search=v:FallbackQuery category="Music" searchBy="All" results="Songs" region="France" WFItemLimit=3 -> v:FallbackCandidates
     Count "Items" ^(GetVariable v:FallbackCandidates) -> v:FallbackCount
 
     If "Is Greater Than" number=0 ^(GetVariable v:FallbackCount)
       GetItemfromList get="First Item" ^(GetVariable v:FallbackCandidates)
-      AddtoPlaylist v:CreatedPlaylist
+      AddtoPlaylist v:PlaylistName
       Calculate "+" 1 ^(GetVariable v:AddedTracks) -> v:AddedTracks
     end
   end

@@ -9,6 +9,7 @@ const MAX_REQUEST_BODY_BYTES = 1_000_000
 const TEMP_DIR_PREFIX = 'tempomaker-previews-'
 const SHORTCUT_TEMP_DIR_PREFIX = 'tempomaker-shortcut-'
 const DEFAULT_SHORTCUT_NAME = 'TempoMaker'
+const DEFAULT_PLAYLIST_NAME = 'TempoMaker Import'
 
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, { 'Content-Type': 'application/json' })
@@ -68,6 +69,11 @@ function normalizeShortcutName(value) {
   return name || DEFAULT_SHORTCUT_NAME
 }
 
+function normalizePlaylistName(value) {
+  const name = String(value || '').trim()
+  return name || DEFAULT_PLAYLIST_NAME
+}
+
 function buildShortcutPayload(playlistName, tracks) {
   return {
     name: playlistName,
@@ -93,6 +99,7 @@ async function listInstalledShortcuts() {
 }
 
 async function runShortcutImport(playlistName, tracks, requestedShortcutName) {
+  const safePlaylistName = normalizePlaylistName(playlistName)
   const shortcutName = normalizeShortcutName(requestedShortcutName)
   const installedShortcuts = await listInstalledShortcuts()
   const shortcutExists = installedShortcuts.some(
@@ -105,7 +112,7 @@ async function runShortcutImport(playlistName, tracks, requestedShortcutName) {
     )
   }
 
-  const payload = buildShortcutPayload(playlistName, tracks)
+  const payload = buildShortcutPayload(safePlaylistName, tracks)
   const tempDir = await mkdtemp(path.join(os.tmpdir(), SHORTCUT_TEMP_DIR_PREFIX))
   const inputPath = path.join(tempDir, 'shortcut-input.json')
   const outputPath = path.join(tempDir, 'shortcut-output.json')
@@ -179,6 +186,7 @@ async function runShortcutImport(playlistName, tracks, requestedShortcutName) {
     return {
       method: 'shortcut',
       shortcutName,
+      playlistName: safePlaylistName,
       totalTracks,
       addedTracks,
       results: resultList,
@@ -246,7 +254,8 @@ function createAppleMusicMiddleware() {
           return
         }
 
-        const { playlistName, tracks } = parsedBody
+        const playlistName = normalizePlaylistName(parsedBody.playlistName)
+        const { tracks } = parsedBody
         const allowPreviewFallback = parsedBody.allowPreviewFallback === true
         const useShortcut = parsedBody.useShortcut === true
         const shortcutName = parsedBody.shortcutName
