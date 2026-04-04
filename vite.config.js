@@ -13,6 +13,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/deezer/, ''),
       },
+      '/api/itunes': {
+        target: 'https://itunes.apple.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/itunes/, ''),
+      },
     },
   },
 })
