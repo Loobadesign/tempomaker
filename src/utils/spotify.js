@@ -7,6 +7,8 @@ export const TEMPO_RANGES = {
 
 const BASE = '/api/deezer'
 
+const MIN_TRACKS = 30
+
 async function deezerFetch(endpoint) {
   const res = await fetch(`${BASE}${endpoint}`)
   if (!res.ok) throw new Error(`Deezer API error: ${res.status}`)
@@ -19,73 +21,83 @@ async function getTrackBpm(trackId) {
 }
 
 /**
- * Search Deezer for tracks, fetch their BPM, and filter by tempo range.
+ * Generate a playlist filtered by genre(s) + tempo.
+ * Guarantees at least MIN_TRACKS results.
+ * @param {string} tempoKey - slow | moderate | fast | ultrafast
+ * @param {Array} genres - array of genre objects from genres.js
+ * @param {Function} onProgress - callback(found, checked)
  */
-export async function generatePlaylistByTempo(tempoKey) {
+export async function generatePlaylistByTempo(tempoKey, genres, onProgress) {
   const range = TEMPO_RANGES[tempoKey]
   if (!range) throw new Error('Invalid tempo key')
 
-  // Search queries tailored to each tempo range
-  const queries = {
-    slow: ['chill', 'slow ballad', 'acoustic relaxing', 'lofi chill', 'ambient', 'soul classic'],
-    moderate: ['pop hits', 'indie rock', 'rnb', 'funk groove', 'reggae', 'hip hop chill'],
-    fast: ['workout', 'dance pop', 'edm', 'rock energy', 'running playlist', 'house music'],
-    ultrafast: ['drum and bass', 'hardstyle', 'speedcore', 'punk rock fast', 'techno hard', 'metal'],
+  // Collect all search queries from selected genres
+  const allQueries = genres.flatMap((g) => g.queries)
+
+  // Shuffle queries for variety
+  for (let i = allQueries.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[allQueries[i], allQueries[j]] = [allQueries[j], allQueries[i]]
   }
 
-  const searchTerms = queries[tempoKey]
-  const allTracks = []
   const seen = new Set()
+  const allTracks = []
 
-  // Search multiple terms in parallel
-  const searchPromises = searchTerms.map((q) =>
-    deezerFetch(`/search?q=${encodeURIComponent(q)}&limit=25`).catch(() => ({ data: [] }))
-  )
-  const searchResults = await Promise.all(searchPromises)
+  // Search in batches of 4 queries, fetch 40 results each for more candidates
+  const queryBatchSize = 4
+  for (let q = 0; q < allQueries.length && allTracks.length < MIN_TRACKS; q += queryBatchSize) {
+    const queryBatch = allQueries.slice(q, q + queryBatchSize)
 
-  // Collect all unique tracks
-  const candidates = []
-  for (const result of searchResults) {
-    if (!result.data) continue
-    for (const track of result.data) {
-      if (!track.id || seen.has(track.id)) continue
-      seen.add(track.id)
-      candidates.push(track)
-    }
-  }
+    const searchPromises = queryBatch.map((query) =>
+      deezerFetch(`/search?q=${encodeURIComponent(query)}&limit=40`).catch(() => ({ data: [] }))
+    )
+    const searchResults = await Promise.all(searchPromises)
 
-  // Fetch BPM for each track (batch in groups of 10 for speed)
-  const batchSize = 10
-  for (let i = 0; i < candidates.length && allTracks.length < 40; i += batchSize) {
-    const batch = candidates.slice(i, i + batchSize)
-    const bpmPromises = batch.map((t) => getTrackBpm(t.id).catch(() => 0))
-    const bpms = await Promise.all(bpmPromises)
-
-    for (let j = 0; j < batch.length; j++) {
-      const bpm = bpms[j]
-      if (bpm >= range.min && bpm <= range.max) {
-        allTracks.push({
-          id: batch[j].id,
-          name: batch[j].title,
-          artists: [{ name: batch[j].artist?.name || 'Unknown' }],
-          album: {
-            name: batch[j].album?.title || '',
-            images: [
-              { url: batch[j].album?.cover_big || '' },
-              { url: batch[j].album?.cover_medium || '' },
-              { url: batch[j].album?.cover_small || '' },
-            ],
-          },
-          preview_url: batch[j].preview || null,
-          tempo: bpm,
-          deezer_link: batch[j].link,
-        })
+    // Collect unique candidates
+    const candidates = []
+    for (const result of searchResults) {
+      if (!result.data) continue
+      for (const track of result.data) {
+        if (!track.id || seen.has(track.id)) continue
+        seen.add(track.id)
+        candidates.push(track)
       }
-      if (allTracks.length >= 40) break
+    }
+
+    // Check BPM in batches of 10
+    const bpmBatchSize = 10
+    for (let i = 0; i < candidates.length && allTracks.length < MIN_TRACKS + 10; i += bpmBatchSize) {
+      const batch = candidates.slice(i, i + bpmBatchSize)
+      const bpmPromises = batch.map((t) => getTrackBpm(t.id).catch(() => 0))
+      const bpms = await Promise.all(bpmPromises)
+
+      for (let j = 0; j < batch.length; j++) {
+        const bpm = bpms[j]
+        if (bpm >= range.min && bpm <= range.max) {
+          allTracks.push({
+            id: batch[j].id,
+            name: batch[j].title,
+            artists: [{ name: batch[j].artist?.name || 'Unknown' }],
+            album: {
+              name: batch[j].album?.title || '',
+              images: [
+                { url: batch[j].album?.cover_big || '' },
+                { url: batch[j].album?.cover_medium || '' },
+                { url: batch[j].album?.cover_small || '' },
+              ],
+            },
+            preview_url: batch[j].preview || null,
+            tempo: bpm,
+            deezer_link: batch[j].link,
+          })
+
+          if (onProgress) onProgress(allTracks.length)
+        }
+      }
     }
   }
 
-  // Shuffle for variety
+  // Shuffle final results
   for (let i = allTracks.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1))
     ;[allTracks[i], allTracks[j]] = [allTracks[j], allTracks[i]]

@@ -1,5 +1,5 @@
 /**
- * Search iTunes API for a track and return the Apple Music URL + metadata
+ * Search iTunes API for a track and return Apple Music metadata
  */
 async function searchiTunes(trackName, artistName) {
   const query = encodeURIComponent(`${trackName} ${artistName}`)
@@ -10,20 +10,23 @@ async function searchiTunes(trackName, artistName) {
     const track = data.results[0]
     return {
       appleMusicUrl: track.trackViewUrl,
-      appleMusicId: track.trackId,
-      artworkUrl: track.artworkUrl100,
+      trackName: track.trackName,
+      artistName: track.artistName,
+      durationMs: track.trackTimeMillis || 0,
     }
   }
   return null
 }
 
 /**
- * Resolve all tracks to Apple Music URLs.
- * Returns an array of { name, artist, appleMusicUrl } objects.
- * Calls onProgress(current, total) for each resolved track.
+ * Resolve tracks to Apple Music, then generate and download a .m3u playlist file.
+ * Opening the .m3u file on macOS automatically opens Apple Music with the playlist.
+ * @param {Array} tracks - array of track objects
+ * @param {string} playlistName - name for the playlist
+ * @param {Function} onProgress - callback(current, total)
  */
-export async function resolveAppleMusicLinks(tracks, onProgress) {
-  const results = []
+export async function exportToAppleMusic(tracks, playlistName, onProgress) {
+  const resolved = []
   const batchSize = 5
 
   for (let i = 0; i < tracks.length; i += batchSize) {
@@ -31,32 +34,50 @@ export async function resolveAppleMusicLinks(tracks, onProgress) {
     const promises = batch.map(async (t) => {
       const artist = t.artists[0]?.name || ''
       const result = await searchiTunes(t.name, artist).catch(() => null)
-      return {
-        name: t.name,
-        artist,
-        appleMusicUrl: result?.appleMusicUrl || null,
+      if (result) {
+        return {
+          name: result.trackName || t.name,
+          artist: result.artistName || artist,
+          url: result.appleMusicUrl,
+          duration: Math.round((result.durationMs || 0) / 1000),
+        }
       }
+      return null
     })
 
     const batchResults = await Promise.all(promises)
-    results.push(...batchResults)
+    for (const r of batchResults) {
+      if (r) resolved.push(r)
+    }
 
     if (onProgress) {
       onProgress(Math.min(i + batchSize, tracks.length), tracks.length)
     }
   }
 
-  return results.filter((r) => r.appleMusicUrl)
-}
-
-/**
- * Open all Apple Music links — opens the first one directly,
- * copies the full list to clipboard for easy adding.
- */
-export function openAppleMusicPlaylist(appleMusicTracks) {
-  if (appleMusicTracks.length > 0) {
-    window.open(appleMusicTracks[0].appleMusicUrl, '_blank')
+  if (resolved.length === 0) {
+    throw new Error('Aucun morceau trouvé sur Apple Music')
   }
+
+  // Generate .m3u playlist
+  const lines = ['#EXTM3U', `#PLAYLIST:${playlistName}`]
+  for (const track of resolved) {
+    lines.push(`#EXTINF:${track.duration},${track.artist} - ${track.name}`)
+    lines.push(track.url)
+  }
+
+  const content = lines.join('\n')
+  const blob = new Blob([content], { type: 'audio/x-mpegurl' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${playlistName.replace(/[^a-zA-Z0-9àâäéèêëïîôùûüÿçÀÂÄÉÈÊËÏÎÔÙÛÜŸÇ -]/g, '')}.m3u`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+
+  return resolved.length
 }
 
 /**
@@ -67,12 +88,4 @@ export async function copyPlaylistToClipboard(tracks) {
     .map((t) => `${t.name} - ${t.artists[0]?.name || 'Unknown'}`)
     .join('\n')
   await navigator.clipboard.writeText(text)
-}
-
-/**
- * Generate Apple Music search URL for a single track
- */
-export function getAppleMusicSearchUrl(trackName, artistName) {
-  const query = encodeURIComponent(`${trackName} ${artistName}`)
-  return `https://music.apple.com/search?term=${query}`
 }

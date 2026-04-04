@@ -31,7 +31,7 @@ const tempoCards = [
   },
 ]
 
-export default function TempoSelector({ onSelect, loading, selectedTempo }) {
+export default function TempoSelector({ onSelect, loading, selectedTempo, loadingProgress }) {
   return (
     <div className="max-w-4xl mx-auto px-6 py-12">
       <div className="text-center mb-10">
@@ -39,7 +39,7 @@ export default function TempoSelector({ onSelect, loading, selectedTempo }) {
           Choisis ton <span className="text-brand-yellow">tempo</span>
         </h2>
         <p className="text-brand-gray">
-          Sélectionne une vitesse et on génère ta playlist personnalisée
+          Sélectionne une vitesse pour lancer la génération
         </p>
       </div>
 
@@ -66,8 +66,11 @@ export default function TempoSelector({ onSelect, loading, selectedTempo }) {
               `}
             >
               {isLoading && (
-                <div className="absolute inset-0 rounded-2xl bg-brand-black/50 flex items-center justify-center z-10">
+                <div className="absolute inset-0 rounded-2xl bg-brand-black/50 flex flex-col items-center justify-center z-10 gap-2">
                   <div className="w-8 h-8 border-2 border-brand-yellow border-t-transparent rounded-full animate-spin" />
+                  {loadingProgress > 0 && (
+                    <span className="text-xs text-brand-yellow font-mono">{loadingProgress} trouvés</span>
+                  )}
                 </div>
               )}
 

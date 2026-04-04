@@ -1,23 +1,42 @@
 import { useState } from 'react'
 import Header from './components/Header'
+import GenreSelector from './components/GenreSelector'
 import TempoSelector from './components/TempoSelector'
 import PlaylistView from './components/PlaylistView'
 import { generatePlaylistByTempo } from './utils/spotify'
 
 function App() {
-  const [view, setView] = useState('select') // 'select' | 'playlist'
+  const [selectedGenres, setSelectedGenres] = useState([])
   const [selectedTempo, setSelectedTempo] = useState(null)
   const [playlist, setPlaylist] = useState([])
   const [loading, setLoading] = useState(false)
+  const [loadingProgress, setLoadingProgress] = useState(0)
   const [error, setError] = useState(null)
+  const [view, setView] = useState('select') // 'select' | 'playlist'
+
+  const handleGenreToggle = (genre) => {
+    setSelectedGenres((prev) => {
+      const exists = prev.some((g) => g.id === genre.id)
+      if (exists) return prev.filter((g) => g.id !== genre.id)
+      return [...prev, genre]
+    })
+  }
 
   const handleTempoSelect = async (tempoKey) => {
+    if (selectedGenres.length === 0) {
+      setError('Sélectionne au moins un genre de musique !')
+      return
+    }
+
     setSelectedTempo(tempoKey)
     setLoading(true)
+    setLoadingProgress(0)
     setError(null)
 
     try {
-      const tracks = await generatePlaylistByTempo(tempoKey)
+      const tracks = await generatePlaylistByTempo(tempoKey, selectedGenres, (found) => {
+        setLoadingProgress(found)
+      })
       setPlaylist(tracks)
       setView('playlist')
     } catch (err) {
@@ -59,15 +78,25 @@ function App() {
                 Tempo<span className="text-brand-yellow">Maker</span>
               </h1>
               <p className="text-brand-gray text-lg max-w-md mx-auto">
-                Choisis un rythme, on génère ta playlist.
+                Choisis tes styles, ton rythme, et on génère ta playlist.
               </p>
             </div>
 
-            <TempoSelector
-              onSelect={handleTempoSelect}
-              loading={loading}
-              selectedTempo={selectedTempo}
+            {/* Step 1: Genre */}
+            <GenreSelector
+              selected={selectedGenres}
+              onToggle={handleGenreToggle}
             />
+
+            {/* Step 2: Tempo */}
+            {selectedGenres.length > 0 && (
+              <TempoSelector
+                onSelect={handleTempoSelect}
+                loading={loading}
+                selectedTempo={selectedTempo}
+                loadingProgress={loadingProgress}
+              />
+            )}
 
             {error && (
               <div className="max-w-4xl mx-auto px-6 pb-8">
@@ -83,6 +112,7 @@ function App() {
           <PlaylistView
             tracks={playlist}
             tempoKey={selectedTempo}
+            genreLabels={selectedGenres.map((g) => g.label).join(', ')}
             onBack={handleBack}
           />
         )}

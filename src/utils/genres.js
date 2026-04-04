@@ -1,0 +1,18 @@
+export const GENRES = [
+  { id: 'pop', label: 'Pop', emoji: '🎤', queries: ['pop hits', 'pop 2024', 'pop music', 'top pop'] },
+  { id: 'hiphop', label: 'Hip-Hop / Rap', emoji: '🎙️', queries: ['hip hop', 'rap hits', 'trap', 'rap français'] },
+  { id: 'rnb', label: 'R&B / Soul', emoji: '💜', queries: ['rnb', 'soul music', 'neo soul', 'rnb hits'] },
+  { id: 'electronic', label: 'Électro / EDM', emoji: '🎛️', queries: ['edm', 'electronic music', 'house', 'techno'] },
+  { id: 'rock', label: 'Rock', emoji: '🎸', queries: ['rock', 'indie rock', 'alternative rock', 'rock classics'] },
+  { id: 'metal', label: 'Metal', emoji: '🤘', queries: ['metal', 'heavy metal', 'metalcore', 'death metal'] },
+  { id: 'jazz', label: 'Jazz', emoji: '🎷', queries: ['jazz', 'jazz fusion', 'smooth jazz', 'jazz classics'] },
+  { id: 'classical', label: 'Classique', emoji: '🎻', queries: ['classical music', 'piano classical', 'orchestra', 'classical'] },
+  { id: 'reggae', label: 'Reggae / Dancehall', emoji: '🏝️', queries: ['reggae', 'dancehall', 'reggae hits', 'dub'] },
+  { id: 'latin', label: 'Latin / Reggaeton', emoji: '💃', queries: ['reggaeton', 'latin music', 'salsa', 'bachata'] },
+  { id: 'afro', label: 'Afrobeats', emoji: '🌍', queries: ['afrobeats', 'afro pop', 'amapiano', 'afro hits'] },
+  { id: 'country', label: 'Country', emoji: '🤠', queries: ['country', 'country hits', 'country rock', 'country pop'] },
+  { id: 'funk', label: 'Funk / Disco', emoji: '🕺', queries: ['funk', 'disco', 'funk groove', 'disco hits'] },
+  { id: 'lofi', label: 'Lo-Fi / Chill', emoji: '☕', queries: ['lofi', 'chill beats', 'lofi hip hop', 'chillhop'] },
+  { id: 'dnb', label: 'Drum & Bass', emoji: '🥁', queries: ['drum and bass', 'dnb', 'liquid dnb', 'jungle'] },
+  { id: 'kpop', label: 'K-Pop', emoji: '🇰🇷', queries: ['kpop', 'k-pop hits', 'korean pop', 'kpop 2024'] },
+]
