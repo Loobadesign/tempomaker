@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { TEMPO_RANGES } from '../utils/spotify'
 import { exportToAppleMusic, copyPlaylistToClipboard } from '../utils/appleMusic'
 
@@ -28,7 +28,14 @@ function TrackRow({ track, index }) {
       )}
 
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-brand-light truncate">{track.name}</div>
+        <div className="text-sm font-medium text-brand-light truncate flex items-center gap-2">
+          <span className="truncate">{track.name}</span>
+          {track.approx && (
+            <span className="text-[10px] uppercase tracking-wide text-amber-300 bg-amber-300/10 px-1.5 py-0.5 rounded">
+              approx
+            </span>
+          )}
+        </div>
         <div className="text-xs text-brand-gray truncate">{artist}</div>
       </div>
 
@@ -53,16 +60,28 @@ function TrackRow({ track, index }) {
   )
 }
 
-export default function PlaylistView({ tracks, tempoKey, genreLabels, onBack }) {
+export default function PlaylistView({
+  tracks,
+  tempoKey,
+  selectedGenres,
+  genreLabels,
+  onBack,
+  onTracksUpdate,
+}) {
   const [copied, setCopied] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [exportPhase, setExportPhase] = useState('') // 'resolve' | 'create'
   const [exportProgress, setExportProgress] = useState({ current: 0, total: 0 })
   const [exportResult, setExportResult] = useState(null)
   const [exportError, setExportError] = useState(null)
+  const [displayTracks, setDisplayTracks] = useState(tracks)
   const range = TEMPO_RANGES[tempoKey]
 
   const playlistName = `TempoMaker — ${range.label}`
+
+  useEffect(() => {
+    setDisplayTracks(tracks)
+  }, [tracks])
 
   const handleExport = async () => {
     setExporting(true)
@@ -70,11 +89,24 @@ export default function PlaylistView({ tracks, tempoKey, genreLabels, onBack }) 
     setExportError(null)
 
     try {
-      const result = await exportToAppleMusic(tracks, playlistName, (current, total, phase) => {
-        setExportPhase(phase)
-        setExportProgress({ current, total })
-      })
+      const result = await exportToAppleMusic(
+        displayTracks,
+        playlistName,
+        {
+          selectedGenres,
+          genreLabels,
+          tempoRange: { min: range.min, max: range.max },
+        },
+        (current, total, phase) => {
+          setExportPhase(phase)
+          setExportProgress({ current, total })
+        }
+      )
       setExportResult(result)
+      if (Array.isArray(result.playlistTracks) && result.playlistTracks.length > 0) {
+        setDisplayTracks(result.playlistTracks)
+        onTracksUpdate?.(result.playlistTracks)
+      }
     } catch (err) {
       console.error(err)
       setExportError(err.message)
@@ -84,7 +116,7 @@ export default function PlaylistView({ tracks, tempoKey, genreLabels, onBack }) 
   }
 
   const handleCopy = async () => {
-    await copyPlaylistToClipboard(tracks)
+    await copyPlaylistToClipboard(displayTracks)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -114,7 +146,7 @@ export default function PlaylistView({ tracks, tempoKey, genreLabels, onBack }) 
                 Playlist <span className="text-brand-yellow">{range.label}</span>
               </h2>
               <p className="text-sm text-brand-gray">
-                {tracks.length} morceaux &middot; {range.description}
+                {displayTracks.length} morceaux &middot; {range.description}
                 {genreLabels && <span> &middot; {genreLabels}</span>}
               </p>
             </div>
@@ -152,8 +184,15 @@ export default function PlaylistView({ tracks, tempoKey, genreLabels, onBack }) 
 
       {exportResult && (
         <p className="text-center text-sm text-green-400 mb-4">
-          Playlist "{playlistName}" créée dans Apple Music avec {exportResult.addedTracks} morceaux.
+          Playlist "{playlistName}" créée dans Apple Music avec {exportResult.addedTracks} morceaux
+          ({exportResult.approxTracks} approx).
           Ouvre Music.app pour la voir !
+        </p>
+      )}
+
+      {exportResult?.catalogSearch === false && (
+        <p className="text-center text-xs text-amber-300 mb-4">
+          {exportResult.catalogSearchReason || 'Recherche catalogue Apple Music non disponible: fallback bibliothèque locale.'}
         </p>
       )}
 
@@ -185,12 +224,12 @@ export default function PlaylistView({ tracks, tempoKey, genreLabels, onBack }) 
         </div>
 
         <div className="divide-y divide-brand-dark-3/50">
-          {tracks.map((track, i) => (
+          {displayTracks.map((track, i) => (
             <TrackRow key={track.id} track={track} index={i} />
           ))}
         </div>
 
-        {tracks.length === 0 && (
+        {displayTracks.length === 0 && (
           <div className="py-16 text-center text-brand-gray">
             Aucun morceau trouvé pour ce tempo.
           </div>

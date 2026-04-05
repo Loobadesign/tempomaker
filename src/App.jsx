@@ -112,8 +112,10 @@ function App() {
           <PlaylistView
             tracks={playlist}
             tempoKey={selectedTempo}
+            selectedGenres={selectedGenres}
             genreLabels={selectedGenres.map((g) => g.label).join(', ')}
             onBack={handleBack}
+            onTracksUpdate={setPlaylist}
           />
         )}
       </main>
